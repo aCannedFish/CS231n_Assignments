@@ -43,7 +43,10 @@ def rnn_step_forward(x, prev_h, Wx, Wh, b):
     ##############################################################################
     # TODO: Implement a single forward step for the vanilla RNN.                 #
     ##############################################################################
-    # 
+    
+    h = x @ Wx + prev_h @ Wh + b
+    next_h = torch.tanh(h)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+    
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -73,7 +76,16 @@ def rnn_forward(x, h0, Wx, Wh, b):
     # input data. You should use the rnn_step_forward function that you defined  #
     # above. You can use a for loop to help compute the forward pass.            #
     ##############################################################################
-    # 
+    
+    x = x.transpose(1, 0)
+    h = []
+    prev_h = h0
+    for t in range(x.shape[0]):
+        next_h = rnn_step_forward(x[t], prev_h, Wx, Wh, b)
+        h.append(next_h)
+        prev_h = next_h
+    h = torch.stack(h, dim=0).transpose(1, 0)
+    
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -101,7 +113,9 @@ def word_embedding_forward(x, W):
     #                                                                            #
     # HINT: This can be done in one line using Pytorch's array indexing.         #
     ##############################################################################
-    # 
+    
+    out = W[x]
+    
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -222,6 +236,11 @@ def temporal_softmax_loss(x, y, mask, verbose=False):
     """
 
     N, T, V = x.shape
+
+    # Ensure target indices have correct integer dtype for PyTorch loss
+    y = y.long()
+    # Ensure mask is boolean so we can cast to float safely
+    mask = mask.bool()
 
     x_flat = x.reshape(N * T, V)
     y_flat = y.reshape(N * T)

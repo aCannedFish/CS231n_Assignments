@@ -138,7 +138,22 @@ class CaptioningRNN:
         #                                                                          #
         # You also don't have to implement the backward pass.                      #
         ############################################################################
-        # 
+        # 用图像特征经过一次仿射变换，得到序列模型的初始隐藏状态 h0。
+        h0 = affine_forward(features, W_proj, b_proj)
+        # 将输入字幕中的每个单词索引映射成词向量序列。
+        word_vectors = word_embedding_forward(captions_in, W_embed)
+
+        # 根据当前模型类型，选择使用 vanilla RNN 或 LSTM 处理整段词向量序列。
+        if self.cell_type == "rnn":
+            hidden_states = rnn_forward(word_vectors, h0, Wx, Wh, b)
+        else:
+            hidden_states = lstm_forward(word_vectors, h0, Wx, Wh, b)
+
+        # 将每个时间步的隐藏状态映射到词表大小的分数空间。
+        scores = temporal_affine_forward(hidden_states, W_vocab, b_vocab)
+        # 结合真实输出字幕和 mask 计算时间序列上的 softmax 损失。
+        loss = temporal_softmax_loss(scores, captions_out, mask)
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -202,7 +217,34 @@ class CaptioningRNN:
         # NOTE: we are still working over minibatches in this function. Also if   #
         # you are using an LSTM, initialize the first cell state to zeros.        #
         ###########################################################################
-        # 
+        # 先把图像特征投影到隐藏状态空间，作为采样时的初始隐藏状态。
+        prev_h = affine_forward(features, W_proj, b_proj)
+        # 只有 LSTM 需要额外维护细胞状态，这里初始化为全零。
+        prev_c = torch.zeros_like(prev_h)
+        # 采样的第一个输入词固定为 <START> 标记。
+        current_words = torch.full((N,), self._start, dtype=torch.long)
+
+        for t in range(max_length):
+            # 取出当前输入词对应的词向量，作为当前时间步的输入。
+            word_vec = W_embed[current_words]
+
+            # 根据模型类型执行一步循环计算，得到下一个隐藏状态。
+            if self.cell_type == "rnn":
+                next_h = rnn_step_forward(word_vec, prev_h, Wx, Wh, b)
+            else:
+                next_h, next_c = lstm_step_forward(word_vec, prev_h, prev_c, Wx, Wh, b)
+                # LSTM 需要把新的细胞状态保存下来，供下一个时间步继续使用。
+                prev_c = next_c
+
+            # 把当前隐藏状态映射到词表分数。
+            scores = next_h @ W_vocab + b_vocab
+            # 选出分数最高的词，作为当前输出词和下一个时间步的输入词。
+            current_words = torch.argmax(scores, dim=1)
+            # 将当前时间步采样得到的词写入最终生成的 captions。
+            captions[:, t] = current_words
+            # 更新隐藏状态，进入下一个时间步。
+            prev_h = next_h
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
