@@ -17,7 +17,7 @@ class CaptioningTransformer(nn.Module):
     operates on minibatches of size N.
     """
     def __init__(self, word_to_idx, input_dim, wordvec_dim, num_heads=4,
-                 num_layers=2, max_length=50):
+                 num_layers=2, max_length=50, dropout=0.1):
         """
         Construct a new CaptioningTransformer instance.
 
@@ -40,9 +40,17 @@ class CaptioningTransformer(nn.Module):
 
         self.visual_projection = nn.Linear(input_dim, wordvec_dim)
         self.embedding = nn.Embedding(vocab_size, wordvec_dim, padding_idx=self._null)
-        self.positional_encoding = PositionalEncoding(wordvec_dim, max_len=max_length)
+        self.positional_encoding = PositionalEncoding(
+            wordvec_dim,
+            dropout=dropout,
+            max_len=max_length,
+        )
 
-        decoder_layer = TransformerDecoderLayer(input_dim=wordvec_dim, num_heads=num_heads)
+        decoder_layer = TransformerDecoderLayer(
+            input_dim=wordvec_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+        )
         self.transformer = TransformerDecoder(decoder_layer, num_layers=num_layers)
         self.apply(self._init_weights)
 
@@ -75,7 +83,7 @@ class CaptioningTransformer(nn.Module):
         """
         N, T = captions.shape
         # Create a placeholder, to be overwritten by your code below.
-        scores = torch.empty((N, T, self.vocab_size))
+        scores = torch.empty((N, T, self.vocab_size), device=features.device)
         ############################################################################
         # TODO: Implement the forward function for CaptionTransformer.             #
         # A few hints:                                                             #
@@ -88,6 +96,20 @@ class CaptioningTransformer(nn.Module):
         #  3) Finally, apply the decoder features on the text & image embeddings   #
         #     along with the tgt_mask. Project the output to scores per token      #
         ############################################################################
+        caption_embeddings = self.embedding(captions)
+        caption_embeddings = self.positional_encoding(caption_embeddings)
+
+        visual_embeddings = self.visual_projection(features).unsqueeze(1)
+        tgt_mask = torch.tril(
+            torch.ones(T, T, device=captions.device, dtype=torch.bool)
+        )
+
+        decoder_output = self.transformer(
+            caption_embeddings,
+            visual_embeddings,
+            tgt_mask=tgt_mask,
+        )
+        scores = self.output(decoder_output)
 
         ############################################################################
         #                             END OF YOUR CODE                             #
@@ -240,6 +262,11 @@ class VisionTransformer(nn.Module):
         #    You may find torch.mean useful.                                      #
         # 5. Feed it through a linear layer to produce class logits.              #
         ############################################################################
+        x = self.patch_embed(x)
+        x = self.positional_encoding(x)
+        x = self.transformer(x)
+        x = torch.mean(x, dim=1)
+        logits = self.head(x)
 
         ############################################################################
         #                             END OF YOUR CODE                             #

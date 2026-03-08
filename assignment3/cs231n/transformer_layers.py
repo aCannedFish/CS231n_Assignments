@@ -36,7 +36,12 @@ class PositionalEncoding(nn.Module):
         # this is what the autograder is expecting. For reference, our solution is #
         # less than 5 lines of code.                                               #
         ############################################################################
-
+        
+        position = torch.arange(max_len, device=pe.device).float().unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, embed_dim, 2, device=pe.device).float() * (-math.log(10000.0) / embed_dim))
+        pe[0, :, 0::2] = torch.sin(position * div_term)
+        pe[0, :, 1::2] = torch.cos(position * div_term)
+        
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -65,6 +70,11 @@ class PositionalEncoding(nn.Module):
         # afterward. This should only take a few lines of code.                    #
         ############################################################################
 
+        # 将位置编码加到输入中，并进行 Dropout
+        # self.pe[:, :S, :] 确保我们只取当前序列长度 S 所需的编码
+        output = x + self.pe[:, :S, :]
+        output = self.dropout(output)
+        
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -155,7 +165,31 @@ class MultiHeadAttention(nn.Module):
         #     prevent a value from influencing output. Specifically, the PyTorch   #
         #     function masked_fill may come in handy.                              #
         ############################################################################
+        Q = self.query(query) # (N, S, E)
+        K = self.key(key)     # (N, T, E)
+        V = self.value(value) # (N, T, E)
 
+        Q = Q.view(N, S, self.n_head, self.head_dim).transpose(1, 2) # (N, H, S, E/H)
+        K = K.view(N, T, self.n_head, self.head_dim).transpose(1, 2) # (N, H, T, E/H)
+        V = V.view(N, T, self.n_head, self.head_dim).transpose(1, 2) # (N, H, T, E/H)
+
+        # Compute attention scores: Q @ K^{T} / \sqrt{d/h}
+        attn_scores = torch.matmul(Q, K.transpose(-2, -1)) / (self.head_dim**0.5) # (N, H, S, T)
+
+        # Apply mask term
+        if attn_mask is not None:
+            attn_scores = attn_scores.masked_fill(attn_mask.view(1, 1, S, T) == 0, float('-inf'))
+
+        # Softmax 
+        attn_weights = torch.softmax(attn_scores, -1) # (N, H, S, T)
+
+        # Dropout
+        attn_weights = self.attn_drop(attn_weights) # (N, H, S, T)
+
+        attn_output = torch.matmul(attn_weights, V) # (N, H, S, E/H)
+        attn_output = attn_output.transpose(1, 2).contiguous().view(N, S, E)
+        output = self.proj(attn_output)
+        
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -252,7 +286,19 @@ class TransformerDecoderLayer(nn.Module):
         # memory, and (2) the feedforward block. Each block should follow the      #
         # same structure as self-attention implemented just above.                 #
         ############################################################################
+        # Cross-attention block
+        shortcut = tgt
+        tgt = self.cross_attn(query=tgt, key=memory, value=memory, attn_mask=None)
+        tgt = self.dropout_cross(tgt)
+        tgt = tgt + shortcut
+        tgt = self.norm_cross(tgt)
 
+        # Feedforward block
+        shortcut = tgt
+        tgt = self.ffn(tgt)
+        tgt = self.dropout_ffn(tgt)
+        tgt = tgt + shortcut
+        tgt = self.norm_ffn(tgt)
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -301,7 +347,7 @@ class PatchEmbedding(nn.Module):
         N, C, H, W = x.shape
         assert H == self.img_size and W == self.img_size, \
             f"Expected image size ({self.img_size}, {self.img_size}), but got ({H}, {W})"
-        out = torch.zeros(N, self.embed_dim)
+        out = torch.empty((N, self.num_patches, self.embed_dim), device=x.device, dtype=x.dtype)
 
         ############################################################################
         # TODO: Divide the image into non-overlapping patches of shape             #
@@ -311,6 +357,16 @@ class PatchEmbedding(nn.Module):
         # step. Once the patches are flattened, embed them into latent vectors     #
         # using the projection layer.                                              #
         ############################################################################
+
+        PS = self.patch_size
+        # (N, C, H, W) -> (N, C, H//PS, PS, W//PS, PS)
+        patches = x.reshape(N, C, H // PS, PS, W // PS, PS)
+        # -> (N, H//PS, W//PS, C, PS, PS)
+        patches = patches.permute(0, 2, 4, 1, 3, 5)
+        # -> (N, num_patches, patch_dim)
+        patches = patches.reshape(N, self.num_patches, self.patch_dim)
+
+        out = self.proj(patches)
 
         ############################################################################
         #                             END OF YOUR CODE                             #
@@ -359,6 +415,20 @@ class TransformerEncoderLayer(nn.Module):
         # TODO: Implement the encoder layer by applying self-attention followed    #
         # by a feedforward block. This code will be very similar to decoder layer. #
         ############################################################################
+
+        # Self-attention block
+        shortcut = src
+        src = self.self_attn(query=src, key=src, value=src, attn_mask=src_mask)
+        src = self.dropout_self(src)
+        src = src + shortcut
+        src = self.norm_self(src)
+
+        # Feedforward block
+        shortcut = src
+        src = self.ffn(src)
+        src = self.dropout_ffn(src)
+        src = src + shortcut
+        src = self.norm_ffn(src)
 
         ############################################################################
         #                             END OF YOUR CODE                             #
