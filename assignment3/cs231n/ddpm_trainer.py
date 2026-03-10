@@ -98,18 +98,6 @@ class Trainer(object):
                     if isinstance(v, torch.Tensor):
                         state[k] = v.to(device)
 
-    def download_pretrained(self):
-        ckpt_path = os.path.join(self.results_folder, f"model-70000.pt")
-        if not os.path.exists(ckpt_path):
-            print(f"Downloading...{ckpt_path}")
-            import urllib.request
-            fname = os.path.basename(ckpt_path)
-            url = f"http://cs231n.stanford.edu/2025/storage/a3/{fname}"
-            urllib.request.urlretrieve(url, ckpt_path)
-            print("Download complete.")
-        else:
-            print(f"Pretrained model already downloaded.")
-
     def train(self):
         device = self.device
         self.diffusion_model.to(device)

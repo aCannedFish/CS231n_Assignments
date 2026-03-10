@@ -105,19 +105,6 @@ class TextEmbedder:
         return emb
 
 
-def download_data(fpath):
-    if not os.path.exists(fpath):
-        print(f"Downloading...{fpath}")
-        import urllib.request
-        fname = os.path.basename(fpath)
-        url = f"http://cs231n.stanford.edu/2025/storage/a3/{fname}"
-        urllib.request.urlretrieve(url, fpath)
-        print("Download complete.")
-    else:
-        fname = os.path.basename(fpath)
-        print(f"{fname} already downloaded.")
-
-
 class EmojiDataset(Dataset):
     def __init__(
         self,
@@ -129,8 +116,6 @@ class EmojiDataset(Dataset):
         
         data_path = os.path.join(os.path.dirname(__file__), "datasets/emoji_data.npz")
         text_emb_path = os.path.join(os.path.dirname(__file__), "datasets/text_embeddings.pt")
-        download_data(data_path)
-        download_data(text_emb_path)
 
         self.load_augs = False
         if self.load_augs:

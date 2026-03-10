@@ -1,6 +1,7 @@
 """Utility functions used for viewing and processing images."""
 
-import urllib.request, urllib.error, urllib.parse, os, tempfile
+import urllib.request, urllib.error, urllib.parse, os
+from io import BytesIO
 
 import numpy as np
 from imageio import imread
@@ -54,17 +55,11 @@ def deprocess_image(img, rescale=False):
 def image_from_url(url):
     """
     Read an image from a URL. Returns a numpy array with the pixel data.
-    We write the image to a temporary file then read it back. Kinda gross.
     """
     try:
-        f = urllib.request.urlopen(url)
-        _, fname = tempfile.mkstemp()
-        with open(fname, "wb") as ff:
-            ff.write(f.read())
-        img = imread(fname)
-        os.close(_)
-        os.remove(fname)
-        return img
+        with urllib.request.urlopen(url) as response:
+            with Image.open(BytesIO(response.read())) as img:
+                return np.array(img)
     except urllib.error.URLError as e:
         print("URL Error: ", e.reason, url)
     except urllib.error.HTTPError as e:
